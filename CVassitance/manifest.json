@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "JobAutoFill AI - SiliconFlow版",
+  "version": "2.1",
+  "description": "使用 SiliconFlow (DeepSeek) 智能识别并填充表单",
+  "permissions": ["storage", "activeTab", "scripting"],
+
+  "host_permissions": [
+    "https://api.siliconflow.cn/*"
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

@@ -150,6 +150,19 @@
         <!-- 简历填写页 -->
         <div id="page-profile" class="page active">
             
+            <!-- 快速导入简历区域 -->
+            <div class="card" style="background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-color: #38bdf8;">
+                <div class="section-header">
+                    <span class="section-title" style="border-left-color: #0ea5e9;">📄 快速导入简历</span>
+                </div>
+                <div class="form-group">
+                    <label>选择简历文件（支持 PDF、Word）</label>
+                    <input type="file" id="resume-file-input" accept=".pdf,.doc,.docx" style="cursor: pointer;">
+                </div>
+                <div id="parse-status" style="padding: 10px; border-radius: 6px; background: rgba(100, 116, 139, 0.08); color: #64748b; font-size: 12px; margin-bottom: 8px; text-align: center;">未选择文件</div>
+                <button id="parse-resume-btn" class="btn btn-primary">📄 上传并解析简历</button>
+            </div>
+            
             <!-- 1. 基本信息 -->
             <div class="card">
                 <div class="section-header"><span class="section-title">1. 基本信息</span></div>
@@ -331,8 +344,21 @@
                 <div class="form-group">
                     <label>模型</label>
                     <select id="api-model">
-                        <option value="deepseek-ai/DeepSeek-V3">DeepSeek-V3</option>
-                        <option value="deepseek-ai/DeepSeek-R1">DeepSeek-R1</option>
+                        <optgroup label="Qwen 系列（推荐）">
+                            <option value="Qwen/Qwen2.5-72B-Instruct" selected>Qwen2.5-72B-Instruct（推荐）</option>
+                            <option value="Qwen/Qwen2.5-32B-Instruct">Qwen2.5-32B-Instruct</option>
+                            <option value="Qwen/Qwen2.5-14B-Instruct">Qwen2.5-14B-Instruct</option>
+                            <option value="Qwen/Qwen2.5-7B-Instruct">Qwen2.5-7B-Instruct</option>
+                            <option value="Qwen/Qwen2-72B-Instruct">Qwen2-72B-Instruct</option>
+                            <option value="Qwen/Qwen2-32B-Instruct">Qwen2-32B-Instruct</option>
+                            <option value="Qwen/Qwen2-14B-Instruct">Qwen2-14B-Instruct</option>
+                            <option value="Qwen/Qwen2-7B-Instruct">Qwen2-7B-Instruct</option>
+                            <option value="Qwen/Qwen2-1.5B-Instruct">Qwen2-1.5B-Instruct</option>
+                        </optgroup>
+                        <optgroup label="DeepSeek 系列">
+                            <option value="deepseek-ai/DeepSeek-V3">DeepSeek-V3</option>
+                            <option value="deepseek-ai/DeepSeek-R1">DeepSeek-R1</option>
+                        </optgroup>
                     </select>
                 </div>
                 <button id="save-config-btn" class="btn btn-primary">保存配置</button>
@@ -345,6 +371,7 @@
                 <h3>准备就绪</h3>
                 <p>插件将自动尝试点击网页上的"添加"按钮，以匹配您的多段经历。</p>
                 <button id="ai-fill-btn" class="btn btn-success">🤖 开始智能填充</button>
+                <button id="quick-fill-btn" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 8px;">⚡ 快速填充（10秒内）</button>
                 
                 <!-- ========== 调试模块：可整体注释掉 ========== -->
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 2px dashed #e2e8f0;">
@@ -618,6 +645,8 @@
         </div>
     </template>
 
+    <!-- profile.js 内部会动态加载 PDF.js 和 mammoth.js，支持多 CDN 故障转移 -->
+    <script src="profile.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>CDN 连接测试工具</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .description {
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        .test-section {
+            margin-bottom: 30px;
+        }
+        .test-section h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .cdn-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+            transition: all 0.3s;
+        }
+        .cdn-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .cdn-number {
+            width: 40px;
+            height: 40px;
+            background: #667eea;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        .cdn-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .cdn-url {
+            font-size: 13px;
+            color: #333;
+            word-break: break-all;
+            margin-bottom: 5px;
+        }
+        .cdn-name {
+            font-size: 11px;
+            color: #999;
+        }
+        .status {
+            width: 100px;
+            text-align: center;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .status.testing {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .btn-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .summary {
+            background: #f0f7ff;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+        .summary h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .summary-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .summary-item:last-child {
+            border-bottom: none;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge.cn {
+            background: #ffd700;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 CDN 连接诊断工具</h1>
+        <p class="description">
+            此工具会逐个测试所有配置的 mammoth.js CDN 源，帮助您找出哪些 CDN 可用。
+            <br>建议在使用简历解析功能前运行此测试。
+        </p>
+
+        <div class="test-section">
+            <h2>📦 Mammoth.js CDN 测试</h2>
+            <div id="cdn-list"></div>
+        </div>
+
+        <div class="btn-container">
+            <button class="btn" id="start-test">开始测试所有 CDN</button>
+        </div>
+
+        <div id="summary" style="display: none;" class="summary">
+            <h3>📊 测试结果汇总</h3>
+            <div id="summary-content"></div>
+        </div>
+    </div>
+
+    <script>
+        const MAMMOTH_CDNS = [
+            { url: 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js', name: 'jsDelivr（国际）' },
+            { url: 'https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js', name: 'unpkg（国际）' },
+            { url: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js', name: 'Cloudflare（国际）' },
+            { url: 'https://registry.npmmirror.com/mammoth/1.6.0/files/mammoth.browser.min.js', name: 'npmmirror（国内🇨🇳）' },
+            { url: 'https://cdn.bootcdn.net/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js', name: 'BootCDN（国内🇨🇳）' }
+        ];
+
+        const cdnListEl = document.getElementById('cdn-list');
+        const startBtn = document.getElementById('start-test');
+        const summaryEl = document.getElementById('summary');
+        const summaryContentEl = document.getElementById('summary-content');
+
+        // 初始化 CDN 列表
+        MAMMOTH_CDNS.forEach((cdn, index) => {
+            const item = document.createElement('div');
+            item.className = 'cdn-item';
+            item.id = `cdn-${index}`;
+            item.innerHTML = `
+                <div class="cdn-number">${index + 1}</div>
+                <div class="cdn-info">
+                    <div class="cdn-url">${cdn.url}</div>
+                    <div class="cdn-name">${cdn.name}</div>
+                </div>
+                <div class="status" id="status-${index}">等待测试</div>
+            `;
+            cdnListEl.appendChild(item);
+        });
+
+        // 测试单个 CDN
+        async function testCDN(url, index) {
+            const statusEl = document.getElementById(`status-${index}`);
+            statusEl.textContent = '测试中...';
+            statusEl.className = 'status testing';
+
+            return new Promise((resolve) => {
+                const script = document.createElement('script');
+                script.src = url;
+                
+                const timeout = setTimeout(() => {
+                    script.remove();
+                    statusEl.textContent = '超时（10秒）';
+                    statusEl.className = 'status failed';
+                    resolve({ success: false, error: '超时' });
+                }, 10000);
+
+                script.onload = () => {
+                    clearTimeout(timeout);
+                    // 检查 mammoth 是否真的加载成功
+                    if (typeof window.mammoth !== 'undefined') {
+                        statusEl.textContent = '✅ 可用';
+                        statusEl.className = 'status success';
+                        resolve({ success: true });
+                    } else {
+                        statusEl.textContent = '❌ 加载但变量未定义';
+                        statusEl.className = 'status failed';
+                        resolve({ success: false, error: '变量未定义' });
+                    }
+                };
+
+                script.onerror = () => {
+                    clearTimeout(timeout);
+                    script.remove();
+                    statusEl.textContent = '❌ 连接失败';
+                    statusEl.className = 'status failed';
+                    resolve({ success: false, error: '连接失败' });
+                };
+
+                document.head.appendChild(script);
+            });
+        }
+
+        // 开始测试
+        startBtn.addEventListener('click', async () => {
+            startBtn.disabled = true;
+            startBtn.textContent = '测试中，请稍候...';
+            summaryEl.style.display = 'none';
+
+            const results = [];
+            
+            for (let i = 0; i < MAMMOTH_CDNS.length; i++) {
+                const result = await testCDN(MAMMOTH_CDNS[i].url, i);
+                results.push({
+                    cdn: MAMMOTH_CDNS[i],
+                    index: i + 1,
+                    ...result
+                });
+                
+                // 如果成功加载，清理 mammoth 对象以便测试下一个
+                if (result.success && typeof window.mammoth !== 'undefined') {
+                    delete window.mammoth;
+                }
+                
+                // 等待 500ms 后测试下一个
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // 显示汇总
+            showSummary(results);
+            startBtn.disabled = false;
+            startBtn.textContent = '重新测试';
+        });
+
+        function showSummary(results) {
+            const successCount = results.filter(r => r.success).length;
+            const failedCount = results.length - successCount;
+            
+            let html = `
+                <div class="summary-item">
+                    <span>测试总数：</span>
+                    <strong>${results.length} 个 CDN</strong>
+                </div>
+                <div class="summary-item">
+                    <span>✅ 可用 CDN：</span>
+                    <strong style="color: #155724;">${successCount} 个</strong>
+                </div>
+                <div class="summary-item">
+                    <span>❌ 不可用 CDN：</span>
+                    <strong style="color: #721c24;">${failedCount} 个</strong>
+                </div>
+            `;
+
+            if (successCount === 0) {
+                html += `
+                    <div style="margin-top: 15px; padding: 15px; background: #f8d7da; border-radius: 8px; color: #721c24;">
+                        <strong>⚠️ 所有 CDN 均不可用！</strong><br>
+                        可能原因：<br>
+                        1. 网络连接问题<br>
+                        2. 防火墙/代理限制<br>
+                        3. 浏览器扩展拦截<br>
+                        <br>
+                        建议：<br>
+                        • 检查网络连接<br>
+                        • 尝试关闭 VPN/代理<br>
+                        • 禁用广告拦截插件<br>
+                        • 更换网络环境测试
+                    </div>
+                `;
+            } else {
+                const successCdns = results.filter(r => r.success);
+                html += `
+                    <div style="margin-top: 15px; padding: 15px; background: #d4edda; border-radius: 8px; color: #155724;">
+                        <strong>✅ 推荐使用以下 CDN：</strong><br>
+                        ${successCdns.map(r => `• CDN ${r.index}: ${r.cdn.name}`).join('<br>')}
+                    </div>
+                `;
+            }
+
+            summaryContentEl.innerHTML = html;
+            summaryEl.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

@@ -101,50 +101,136 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     // ========== 加载数据 ==========
-    chrome.storage.local.get(['profile', 'config'], (result) => {
-        const p = result.profile || {};
-        
+    // 将加载逻辑抽离为函数，供初始加载和解析后处理复用
+    function loadProfileData() {
+        chrome.storage.local.get(['profile', 'config'], (result) => {
+            const p = result.profile || {};
+            renderProfileToForm(p);
+            
+            // 加载配置
+            if (result.config) {
+                document.getElementById('api-key').value = result.config.apiKey || '';
+                document.getElementById('api-model').value = result.config.model || 'Qwen/Qwen2.5-72B-Instruct';
+            }
+        });
+    }
+    
+    /**
+     * 将 profile 对象渲染到表单 UI
+     * @param {Object} profile - profile 对象
+     */
+    function renderProfileToForm(profile) {
         // 加载基本信息
-        if (p.basic) {
+        if (profile.basic) {
             basicFields.forEach(field => {
                 const el = document.getElementById(`basic-${field}`);
-                if (el && p.basic[field] !== undefined) {
+                if (el && profile.basic[field] !== undefined) {
                     if (el.type === 'month') {
-                        el.value = parseYYYYMToMonth(p.basic[field]);
+                        el.value = parseYYYYMToMonth(profile.basic[field]);
                     } else {
-                        el.value = p.basic[field];
+                        el.value = profile.basic[field];
                     }
                 }
             });
         }
 
-        // 加载多条目数据
+        // 清空并加载多条目数据（使用批量更新优化性能）
+        // 先收集所有需要渲染的数据
+        const renderTasks = [];
         Object.keys(sectionConfig).forEach(type => {
-            const listData = p[type] || [];
-            listData.forEach(d => addItem(type, d));
-            // 为教育和实习默认添加一条空记录
-            if (!listData.length && (type === 'education' || type === 'internship')) {
-                addItem(type);
+            const container = containers[type];
+            if (!container) return;
+            
+            // 清空现有内容
+            container.innerHTML = '';
+            
+            // 根据 type 获取对应的数据（处理嵌套结构）
+            let listData = [];
+            
+            // 嵌套数组维度：特殊映射
+            if (type === 'campusLeader') {
+                listData = profile.campus?.leader || [];
+            } else if (type === 'campusActivity') {
+                listData = profile.campus?.activity || [];
+            } else if (type === 'volunteer') {
+                listData = profile.socialPractice?.volunteer || [];
+            } else if (type === 'socialProject') {
+                listData = profile.socialPractice?.project || [];
+            } else if (type === 'paper') {
+                listData = profile.professionalAchievement?.paper || [];
+            } else if (type === 'patent') {
+                listData = profile.professionalAchievement?.patent || [];
+            } else if (type === 'conference') {
+                listData = profile.professionalAchievement?.conference || [];
+            } else {
+                // 普通数组维度：直接读取
+                listData = profile[type] || [];
             }
+            
+            // 为教育和实习默认添加一条空记录（仅在数据为空时）
+            if (!listData.length && (type === 'education' || type === 'internship')) {
+                listData = [{}];
+            }
+            
+            // 收集渲染任务
+            renderTasks.push({ type, listData, container });
+        });
+        
+        // 批量渲染（使用 DocumentFragment 减少重排）
+        renderTasks.forEach(({ type, listData, container }) => {
+            const fragment = document.createDocumentFragment();
+            listData.forEach(d => {
+                const template = templates[type];
+                if (!template) return;
+                const clone = template.content.cloneNode(true);
+                const itemDiv = clone.querySelector('.list-item');
+                if (itemDiv) {
+                    // 填充数据
+                    itemDiv.querySelectorAll('.field').forEach(input => {
+                        const key = input.dataset.key;
+                        if (d[key] !== undefined && d[key] !== null) {
+                            if (input.type === 'month') {
+                                input.value = parseYYYYMToMonth(d[key]);
+                            } else {
+                                input.value = d[key];
+                            }
+                        }
+                    });
+                    
+                    // 删除按钮事件
+                    const removeBtn = itemDiv.querySelector('.remove-btn');
+                    if (removeBtn) {
+                        removeBtn.addEventListener('click', () => itemDiv.remove());
+                    }
+                    
+                    fragment.appendChild(itemDiv);
+                }
+            });
+            container.appendChild(fragment);
         });
 
         // 加载单字段维度
-        if (p.skill && p.skill.description) {
-            document.getElementById('skill-description').value = p.skill.description;
+        if (profile.skill && profile.skill.description) {
+            document.getElementById('skill-description').value = profile.skill.description;
+        } else {
+            document.getElementById('skill-description').value = '';
         }
-        if (p.selfEvaluation && p.selfEvaluation.description) {
-            document.getElementById('selfEvaluation-description').value = p.selfEvaluation.description;
+        
+        if (profile.selfEvaluation && profile.selfEvaluation.description) {
+            document.getElementById('selfEvaluation-description').value = profile.selfEvaluation.description;
+        } else {
+            document.getElementById('selfEvaluation-description').value = '';
         }
-        if (p.specialNotes && p.specialNotes.description) {
-            document.getElementById('specialNotes-description').value = p.specialNotes.description;
+        
+        if (profile.specialNotes && profile.specialNotes.description) {
+            document.getElementById('specialNotes-description').value = profile.specialNotes.description;
+        } else {
+            document.getElementById('specialNotes-description').value = '';
         }
-
-        // 加载配置
-        if (result.config) {
-            document.getElementById('api-key').value = result.config.apiKey || '';
-            document.getElementById('api-model').value = result.config.model || 'deepseek-ai/DeepSeek-V3';
-        }
-    });
+    }
+    
+    // 初始加载
+    loadProfileData();
 
     // ========== 收集字段数据 ==========
     function scrapeSection(type) {
@@ -285,6 +371,220 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 2000);
         });
     });
+    
+    // ========== 简历解析功能：文件上传 + 解析 + 回填 ==========
+    const fileInput = document.getElementById('resume-file-input');
+    const parseBtn = document.getElementById('parse-resume-btn');
+    const statusEl = document.getElementById('parse-status');
+    
+    // 文件选择事件：更新状态显示
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+            statusEl.textContent = `✅ 已选择：${file.name} (${sizeMB} MB)`;
+            statusEl.style.color = '#48bb78';
+            statusEl.style.background = 'rgba(72, 187, 120, 0.1)';
+        } else {
+            statusEl.textContent = '未选择文件';
+            statusEl.style.color = '#64748b';
+            statusEl.style.background = 'rgba(100, 116, 139, 0.08)';
+        }
+    });
+    
+    // 解析按钮点击事件
+    parseBtn.addEventListener('click', async () => {
+        await onParseResumeClick();
+    });
+    
+    /**
+     * 合并 profile 对象的策略函数
+     * @param {Object} currentProfile - 当前 storage 中的 profile
+     * @param {Object} parsedProfile - 解析出来的 profile
+     * @returns {Object} 合并后的 newProfile
+     */
+    function mergeProfiles(currentProfile, parsedProfile) {
+        const newProfile = JSON.parse(JSON.stringify(currentProfile || {})); // 深拷贝
+        
+        // 基本信息：逼字段覆盖
+        if (parsedProfile.basic) {
+            newProfile.basic = newProfile.basic || {};
+            Object.keys(parsedProfile.basic).forEach(key => {
+                if (parsedProfile.basic[key]) {
+                    newProfile.basic[key] = parsedProfile.basic[key];
+                }
+            });
+        }
+        
+        // 数组维度：整体替换（以简历为准）
+        const arrayFields = [
+            'education', 'award', 'competition', 'project', 
+            'internship', 'workExperience', 'language', 
+            'certificate', 'familyMembers'
+        ];
+        arrayFields.forEach(field => {
+            if (Array.isArray(parsedProfile[field]) && parsedProfile[field].length > 0) {
+                newProfile[field] = parsedProfile[field];
+            }
+        });
+        
+        // 嵌套数组维度
+        if (parsedProfile.campus) {
+            newProfile.campus = parsedProfile.campus;
+        }
+        if (parsedProfile.socialPractice) {
+            newProfile.socialPractice = parsedProfile.socialPractice;
+        }
+        if (parsedProfile.professionalAchievement) {
+            newProfile.professionalAchievement = parsedProfile.professionalAchievement;
+        }
+        
+        // 单字段维度
+        if (parsedProfile.skill?.description) {
+            newProfile.skill = { description: parsedProfile.skill.description };
+        }
+        if (parsedProfile.selfEvaluation?.description) {
+            newProfile.selfEvaluation = { description: parsedProfile.selfEvaluation.description };
+        }
+        if (parsedProfile.specialNotes?.description) {
+            newProfile.specialNotes = { description: parsedProfile.specialNotes.description };
+        }
+        
+        return newProfile;
+    }
+    
+    /**
+     * 解析简历按钮点击处理函数
+     */
+    async function onParseResumeClick() {
+        const file = fileInput.files[0];
+        
+        // 1. 校验文件是否选择
+        if (!file) {
+            alert('请先选择简历文件');
+            return;
+        }
+        
+        // 2. 校验文件扩展名
+        const fileName = file.name.toLowerCase();
+        const validExtensions = ['.pdf', '.doc', '.docx'];
+        const isValidExt = validExtensions.some(ext => fileName.endsWith(ext));
+        if (!isValidExt) {
+            alert('仅支持 PDF、Word 格式（.pdf, .doc, .docx）');
+            return;
+        }
+        
+        // 3. 校验文件大小（优化版：提供更详细的警告和建议）
+        const maxSizeMB = 10;
+        const fileSizeMB = file.size / 1024 / 1024;
+        if (fileSizeMB > maxSizeMB) {
+            alert(`文件太大（${fileSizeMB.toFixed(2)} MB），请使用小于 ${maxSizeMB} MB 的文件\n\n建议：\n1. 将文件另存为 PDF 格式（通常更小）\n2. 压缩文件中的图片\n3. 移除不必要的页面或内容`);
+            return;
+        }
+        
+        // 对较大文件给出警告（但不阻止）
+        if (fileSizeMB > 5) {
+            const shouldContinue = confirm(`⚠️ 文件较大（${fileSizeMB.toFixed(2)} MB），解析可能需要较长时间（30-60秒）。\n\n是否继续？\n\n建议：如果文件包含大量图片，考虑先移除图片以提高解析速度。`);
+            if (!shouldContinue) {
+                return;
+            }
+        }
+        
+        // 对 .docx 格式的大文件给出额外警告
+        if (fileName.endsWith('.docx') && fileSizeMB > 3) {
+            console.warn(`⚠️ 大型 Word 文件（${fileSizeMB.toFixed(2)} MB），解析可能需要 20-40 秒`);
+        }
+        
+        // 4. 获取 AI API 配置
+        const configResult = await new Promise((resolve) => {
+            chrome.storage.local.get('config', resolve);
+        });
+        
+        if (!configResult.config || !configResult.config.apiKey) {
+            alert('请先到「⚙️ 设置」页面配置 API Key');
+            return;
+        }
+        
+        const { apiKey, model } = configResult.config;
+        
+        // 5. 解析过程状态管理
+        parseBtn.disabled = true;
+        statusEl.textContent = '⏳ 步骤 1/3: 提取文件文本...';
+        statusEl.style.color = '#4a90e2';
+        statusEl.style.background = 'rgba(74, 144, 226, 0.1)';
+        console.log('📄 开始解析上传的简历文件...');
+        
+        // 创建进度更新函数
+        const updateProgress = (step, total, message) => {
+            statusEl.textContent = `⏳ 步骤 ${step}/${total}: ${message}`;
+        };
+        
+        try {
+            // 6. 调用 profile.js 的解析函数（传入 API 配置和进度回调）
+            const parsedProfile = await window.parseResumeFile(file, apiKey, model, updateProgress);
+            console.log('✅ 简历解析成功，准备更新 profile');
+            
+            // 7. 获取当前 profile 并合并
+            const result = await new Promise((resolve) => {
+                chrome.storage.local.get('profile', resolve);
+            });
+            const currentProfile = result.profile || {};
+            const newProfile = mergeProfiles(currentProfile, parsedProfile);
+            console.log('🔀 profile 合并完成', newProfile);
+            
+            // 8. 渲染到表单（使用批量更新优化性能）
+            statusEl.textContent = '⏳ 正在渲染到表单...';
+            // 使用 requestAnimationFrame 批量更新，避免阻塞
+            await new Promise(resolve => {
+                requestAnimationFrame(() => {
+                    renderProfileToForm(newProfile);
+                    console.log('🖥️ 已渲染到表单');
+                    resolve();
+                });
+            });
+            
+            // 9. 保存到 storage
+            await new Promise((resolve, reject) => {
+                chrome.storage.local.set({ profile: newProfile }, () => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve();
+                    }
+                });
+            });
+            console.log('✅ profile 已更新并渲染到表单');
+            
+            // 10. 成功状态反馈
+            statusEl.textContent = '✅ 解析成功，已填入表单，请确认后保存或直接使用智能填充';
+            statusEl.style.color = '#48bb78';
+            statusEl.style.background = 'rgba(72, 187, 120, 0.15)';
+            
+            // 按钮动效
+            parseBtn.style.background = 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)';
+            parseBtn.textContent = '✅ 解析完成';
+            setTimeout(() => {
+                parseBtn.textContent = '📄 上传并解析简历';
+                parseBtn.style.background = '';
+            }, 2000);
+            
+        } catch (error) {
+            // 10. 错误处理
+            console.error('❌ 解析失败:', error);
+            statusEl.textContent = `❌ 解析失败：${error.message}`;
+            statusEl.style.color = '#e74c3c';
+            statusEl.style.background = 'rgba(231, 76, 60, 0.1)';
+            alert(`解析失败：${error.message}
+
+请检查：
+1. 后端 API 是否正常运行
+2. 网络连接是否正常
+3. 文件格式是否正确`);
+        } finally {
+            // 11. 恢复按钮状态
+            parseBtn.disabled = false;
+        }
+    }
 
     // ========== AI 运行 ==========
     const aiFillBtn = document.getElementById('ai-fill-btn');
@@ -294,6 +594,282 @@ document.addEventListener('DOMContentLoaded', () => {
         
         runAiAutoFill(data.config, data.profile, aiFillBtn);
     });
+
+    // ========== 快速填充（10秒内完成）==========
+    const quickFillBtn = document.getElementById('quick-fill-btn');
+    if (quickFillBtn) {
+        quickFillBtn.addEventListener('click', async () => {
+            const data = await chrome.storage.local.get(['config']);
+            if (!data.config?.apiKey) return alert('请先设置 API Key');
+            
+            // 检查是否有上传的简历文件
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请先上传简历文件（PDF 或 Word）');
+                return;
+            }
+            
+            runQuickFill(data.config, file, quickFillBtn);
+        });
+    }
+
+    /**
+     * 快速填充：10秒内完成简历解析和填充（不使用规则匹配）
+     * 策略：
+     * 1. 并行处理：同时提取文本和扫描表单
+     * 2. 合并AI调用：一次性解析简历并匹配字段
+     * 3. 优化prompt：更简洁，减少token
+     * 4. 直接填充：跳过中间步骤
+     */
+    async function runQuickFill(config, file, btn) {
+        const startTime = Date.now();
+        try {
+            btn.disabled = true;
+            btn.textContent = '⚡ 快速处理中...';
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            
+            log('⚡ 开始快速填充（目标：10秒内完成）...');
+            
+            // ========== 步骤1：并行处理 ==========
+            log('📋 步骤1/4: 并行处理（提取文本 + 扫描表单）...');
+            btn.textContent = '⚡ 并行处理...';
+            
+            // 注入 content_script.js（用于扫描表单）
+            await chrome.scripting.executeScript({ 
+                target: { tabId: tab.id }, 
+                files: ['content_script.js'] 
+            });
+            
+            // 并行执行：文本提取 + 表单扫描
+            const [extractedText, scanResult] = await Promise.all([
+                // 提取文本（使用 parseResumeFile 但只获取文本部分，不完整解析）
+                (async () => {
+                    try {
+                        // 使用 parseResumeFile 的文本提取部分
+                        // 注意：这里我们只提取文本，不进行AI解析
+                        const fileName = file.name.toLowerCase();
+                        
+                        if (fileName.endsWith('.pdf')) {
+                            // 直接调用 profile.js 内部函数（如果可用）
+                            // 否则使用完整解析但只取文本
+                            if (typeof window.extractTextFromPDF === 'function') {
+                                return await window.extractTextFromPDF(file);
+                            }
+                        } else if (fileName.endsWith('.docx')) {
+                            if (typeof window.extractTextFromWord === 'function') {
+                                return await window.extractTextFromWord(file, () => {});
+                            }
+                        }
+                        
+                        // 如果直接提取不可用，使用完整解析流程（但会慢一些）
+                        // 为了速度，我们使用一个简化的文本提取
+                        log('⚠️ 使用完整解析流程（可能较慢）...');
+                        const profile = await window.parseResumeFile(file, config.apiKey, config.model, () => {});
+                        // 将 profile 转换为文本描述
+                        return JSON.stringify(profile, null, 2);
+                    } catch (error) {
+                        console.error('文本提取失败:', error);
+                        throw new Error(`文本提取失败: ${error.message}`);
+                    }
+                })(),
+                // 扫描表单（等待脚本注入完成）
+                (async () => {
+                    await new Promise(r => setTimeout(r, 200));
+                    return await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
+                })()
+            ]);
+            
+            const elapsed1 = Date.now() - startTime;
+            log(`✅ 并行处理完成（${elapsed1}ms），文本长度: ${extractedText.length}，字段数: ${scanResult.fields.length}`);
+            
+            // ========== 步骤2：合并AI调用（解析+匹配）==========
+            log('🧠 步骤2/4: AI 解析并匹配（合并调用）...');
+            btn.textContent = '🧠 AI 处理中...';
+            
+            const mapping = await callQuickFillAPI(
+                config.apiKey, 
+                config.model, 
+                extractedText, 
+                scanResult.fields,
+                file.name
+            );
+            
+            const elapsed2 = Date.now() - startTime;
+            log(`✅ AI 处理完成（${elapsed2}ms），匹配了 ${Object.keys(mapping).filter(k => mapping[k] !== null).length} 个字段`);
+            
+            // ========== 步骤3：扩展表单 ==========
+            log('🖱️ 步骤3/4: 扩展表单...');
+            btn.textContent = '🖱️ 扩展表单...';
+            
+            // 从 mapping 推断需要扩展的数量
+            const counts = inferSectionCounts(mapping, scanResult.fields);
+            await chrome.tabs.sendMessage(tab.id, { action: 'EXPAND_FORM', counts });
+            
+            // ========== 步骤4：填充数据 ==========
+            log('✍️ 步骤4/4: 填充数据...');
+            btn.textContent = '✍️ 填充中...';
+            
+            // 重新扫描（扩展后可能有新字段）
+            const finalScan = await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
+            const finalMapping = await callQuickFillAPI(
+                config.apiKey,
+                config.model,
+                extractedText,
+                finalScan.fields,
+                file.name
+            );
+            
+            const fillRes = await chrome.tabs.sendMessage(tab.id, { 
+                action: 'APPLY_MAPPING', 
+                mapping: finalMapping 
+            });
+            
+            const totalTime = Date.now() - startTime;
+            const successCount = fillRes.count || 0;
+            
+            log(`✅ 快速填充完成！`);
+            log(`📊 总耗时: ${(totalTime/1000).toFixed(1)}秒，填充了 ${successCount} 个字段`);
+            
+            if (totalTime <= 10000) {
+                btn.textContent = `✅ ${(totalTime/1000).toFixed(1)}秒完成`;
+            } else {
+                btn.textContent = `✅ 完成（${(totalTime/1000).toFixed(1)}秒）`;
+            }
+            
+        } catch (e) {
+            const totalTime = Date.now() - startTime;
+            log(`❌ 快速填充失败: ${e.message}（耗时: ${(totalTime/1000).toFixed(1)}秒）`);
+            console.error(e);
+            btn.textContent = '❌ 失败';
+            alert(`快速填充失败：${e.message}\n\n耗时: ${(totalTime/1000).toFixed(1)}秒`);
+        } finally {
+            setTimeout(() => { 
+                btn.disabled = false; 
+                if(btn.textContent.includes('完成') || btn.textContent === '❌ 失败') {
+                    btn.textContent = '⚡ 快速填充（10秒内）';
+                }
+            }, 3000);
+        }
+    }
+    
+    /**
+     * 快速填充API调用（合并解析和匹配）
+     */
+    async function callQuickFillAPI(apiKey, model, resumeText, formFields, fileName) {
+        // 优化后的简洁 prompt
+        const systemPrompt = `你是简历解析和表单填充助手。一次性完成两个任务：
+1. 从简历文本提取结构化信息
+2. 将信息匹配到表单字段
+
+输入：
+- resume_text: 简历纯文本
+- form_fields: 表单字段列表 [{id, label, type, context, sectionIndex, options?}]
+
+规则：
+- context决定数据源：Education->education[], Work/Internship->internship[]或workExperience[], Basic Info->basic, 等等
+- sectionIndex决定使用第几段数据（0=第一段）
+- 时间格式：YYYY.M
+- 下拉框：匹配options中的value或text
+
+返回：{"field_id": "value" 或 null}`;
+
+        // 限制文本长度（快速处理）
+        const maxTextLength = 6000; // 减少到6000字符，加快处理
+        const truncatedText = resumeText.length > maxTextLength 
+            ? resumeText.substring(0, maxTextLength) + '\n[已截断]'
+            : resumeText;
+        
+        // 限制字段数量（只处理前50个字段，加快处理）
+        const limitedFields = formFields.slice(0, 50);
+        
+        const userPrompt = `简历：${fileName}\n\n${truncatedText}\n\n表单字段：${JSON.stringify(limitedFields)}`;
+        
+        const requestBody = {
+            model: model || "Qwen/Qwen2.5-72B-Instruct",
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.1,
+            max_tokens: 4096 // 减少token，加快响应
+        };
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时（快速模式）
+        
+        try {
+            const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(requestBody),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`API 调用失败: HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            if (data.error) {
+                throw new Error(`API 错误: ${data.error.message}`);
+            }
+            
+            const content = data.choices[0].message.content;
+            return JSON.parse(content);
+            
+        } catch (error) {
+            clearTimeout(timeoutId);
+            if (error.name === 'AbortError') {
+                throw new Error('AI 处理超时（8秒），请尝试使用较小的简历文件');
+            }
+            throw error;
+        }
+    }
+    
+    /**
+     * 从 mapping 推断需要扩展的段落数量
+     */
+    function inferSectionCounts(mapping, fields) {
+        const counts = {};
+        const sectionTypes = {
+            'Education': 'education',
+            'Work/Internship': 'internship',
+            'Work Experience': 'workExperience',
+            'Project': 'project',
+            'Award': 'award',
+            'Competition': 'competition',
+            'Language': 'language',
+            'Certificate': 'certificate',
+            'Family': 'familyMembers',
+            'Campus Leader': 'campusLeader',
+            'Campus Activity': 'campusActivity',
+            'Volunteer': 'volunteer',
+            'Social Project': 'socialProject',
+            'Paper': 'paper',
+            'Patent': 'patent',
+            'Conference': 'conference'
+        };
+        
+        // 统计每个 context 的最大 sectionIndex
+        fields.forEach(field => {
+            const context = field.context;
+            const sectionType = sectionTypes[context];
+            if (sectionType && field.sectionIndex !== undefined) {
+                if (!counts[sectionType] || counts[sectionType] < field.sectionIndex + 1) {
+                    counts[sectionType] = field.sectionIndex + 1;
+                }
+            }
+        });
+        
+        return counts;
+    }
+    
 
     async function runAiAutoFill(config, profile, btn) {
         try {
@@ -499,7 +1075,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 'Authorization': `Bearer ${apiKey}`
             },
             body: JSON.stringify({
-                model: model || "deepseek-ai/DeepSeek-V3",
+                model: model || "Qwen/Qwen2.5-72B-Instruct",
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: JSON.stringify({ user_resume: profile, web_fields: formFields }) }

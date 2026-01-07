@@ -141,26 +141,34 @@
 <body>
 
     <div class="tabs">
-        <button class="tab-btn active" data-target="page-profile">📝 简历</button>
+        <button class="tab-btn active" data-target="page-profile">📝 智能填充</button>
+        <button class="tab-btn" data-target="page-run">🚀 一键解析填充</button>
         <button class="tab-btn" data-target="page-config">⚙️ 设置</button>
-        <button class="tab-btn" data-target="page-run">🚀 运行</button>
     </div>
 
     <div class="content-area">
         <!-- 简历填写页 -->
         <div id="page-profile" class="page active">
             
-            <!-- 快速导入简历区域 -->
+            <!-- 快速导入栏：文件上传与解析区域 -->
             <div class="card" style="background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%); border-color: #38bdf8;">
                 <div class="section-header">
                     <span class="section-title" style="border-left-color: #0ea5e9;">📄 快速导入简历</span>
                 </div>
-                <div class="form-group">
-                    <label>选择简历文件（支持 PDF、Word）</label>
-                    <input type="file" id="resume-file-input" accept=".pdf,.doc,.docx" style="cursor: pointer;">
-                </div>
-                <div id="parse-status" style="padding: 10px; border-radius: 6px; background: rgba(100, 116, 139, 0.08); color: #64748b; font-size: 12px; margin-bottom: 8px; text-align: center;">未选择文件</div>
-                <button id="parse-resume-btn" class="btn btn-primary">📄 上传并解析简历</button>
+                <!-- 隐藏的文件输入控件 -->
+                <input type="file" id="resume-file-input" accept=".pdf,.doc,.docx" style="display: none;">
+                
+                <!-- 第一行：选择文件按钮 -->
+                <button id="choose-file-btn" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-bottom: 8px;">📁 选择简历文件</button>
+                
+                <!-- 第二行：上传并解析简历按钮 -->
+                <button id="parse-resume-btn" class="btn btn-primary" style="margin-bottom: 8px;">📄 上传并解析简历</button>
+                
+                <!-- 第三行：开始智能填充按钮 -->
+                <button id="ai-fill-btn" class="btn btn-success" style="margin-bottom: 8px;">🤖 开始智能填充</button>
+                
+                <!-- 统一状态栏：合并上传状态与填充状态 -->
+                <div id="smart-fill-status" style="padding: 10px; border-radius: 6px; background: rgba(100, 116, 139, 0.08); color: #64748b; font-size: 12px; text-align: center; min-height: 36px; display: flex; align-items: center; justify-content: center;">未选择文件</div>
             </div>
             
             <!-- 1. 基本信息 -->
@@ -339,7 +347,35 @@
         <!-- 设置页 -->
         <div id="page-config" class="page">
             <div class="card">
-                <h3>API 配置</h3>
+                <h3>模式选择</h3>
+                <div class="form-group">
+                    <label>使用模式</label>
+                    <div style="display: flex; gap: 12px; margin-top: 8px;">
+                        <label style="flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.2s;">
+                            <input type="radio" name="mode" value="free" style="margin-right: 6px;">
+                            <span style="font-weight: 600;">免费模式 (Free)</span>
+                            <div style="font-size: 11px; color: #718096; margin-top: 4px;">使用自有 API Key</div>
+                        </label>
+                        <label style="flex: 1; padding: 10px; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer; text-align: center; transition: all 0.2s;">
+                            <input type="radio" name="mode" value="pro" style="margin-right: 6px;">
+                            <span style="font-weight: 600;">Pro 模式</span>
+                            <div style="font-size: 11px; color: #718096; margin-top: 4px;">使用内置 Qwen Key</div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card" id="free-mode-config">
+                <h3>API 配置（免费模式）</h3>
+                <div class="form-group">
+                    <label>平台 (Provider)</label>
+                    <select id="api-provider">
+                        <option value="siliconflow" selected>SiliconFlow</option>
+                        <option value="deepseek_official">DeepSeek 官方</option>
+                        <option value="qwen_official">通义千问官方</option>
+                        <option value="kimi_official">Kimi 官方</option>
+                    </select>
+                </div>
                 <div class="form-group"><label>API Key</label><input type="password" id="api-key"></div>
                 <div class="form-group">
                     <label>模型</label>
@@ -361,16 +397,32 @@
                         </optgroup>
                     </select>
                 </div>
+            </div>
+            
+            <div class="card" id="pro-mode-info" style="display: none;">
+                <h3>Pro 模式说明</h3>
+                <p style="font-size: 12px; color: #718096; line-height: 1.6;">
+                    Pro 模式使用后端内置的 Qwen 官方 API Key，无需配置。<br>
+                    当前版本无付费限制，所有用户均可使用。
+                </p>
+            </div>
+            
+            <div class="card">
+                <div class="form-group">
+                    <label>后端服务地址</label>
+                    <input type="text" id="backend-url" placeholder="http://localhost:3000" value="http://localhost:3000">
+                    <div style="font-size: 11px; color: #718096; margin-top: 4px;">后端 API 服务地址</div>
+                </div>
                 <button id="save-config-btn" class="btn btn-primary">保存配置</button>
             </div>
         </div>
 
-        <!-- 运行页 -->
+        <!-- 运行页（一键解析填充） -->
         <div id="page-run" class="page">
             <div class="card">
                 <h3>准备就绪</h3>
                 <p>插件将自动尝试点击网页上的"添加"按钮，以匹配您的多段经历。</p>
-                <button id="ai-fill-btn" class="btn btn-success">🤖 开始智能填充</button>
+                <button id="quick-upload-btn" class="btn btn-primary">📁 简历上传</button>
                 <button id="quick-fill-btn" class="btn" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-top: 8px;">⚡ 快速填充（10秒内）</button>
                 
                 <!-- ========== 调试模块：可整体注释掉 ========== -->

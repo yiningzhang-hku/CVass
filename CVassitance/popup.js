@@ -108,12 +108,46 @@ document.addEventListener('DOMContentLoaded', () => {
             renderProfileToForm(p);
             
             // 加载配置
-            if (result.config) {
-                document.getElementById('api-key').value = result.config.apiKey || '';
-                document.getElementById('api-model').value = result.config.model || 'Qwen/Qwen2.5-72B-Instruct';
+            const config = result.config || {};
+            const mode = config.mode || 'free';
+            
+            // 设置模式选择
+            document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
+            updateModeUI(mode);
+            
+            // 加载 Free 模式配置
+            if (mode === 'free') {
+                document.getElementById('api-provider').value = config.provider || 'siliconflow';
+                document.getElementById('api-key').value = config.apiKey || '';
+                document.getElementById('api-model').value = config.model || 'Qwen/Qwen2.5-72B-Instruct';
             }
+            
+            // 加载后端地址
+            document.getElementById('backend-url').value = config.backendUrl || 'http://localhost:3000';
         });
     }
+    
+    // 更新模式 UI 显示
+    function updateModeUI(mode) {
+        const freeConfig = document.getElementById('free-mode-config');
+        const proInfo = document.getElementById('pro-mode-info');
+        
+        if (mode === 'free') {
+            freeConfig.style.display = 'block';
+            proInfo.style.display = 'none';
+        } else {
+            freeConfig.style.display = 'none';
+            proInfo.style.display = 'block';
+        }
+    }
+    
+    // 监听模式切换
+    document.querySelectorAll('input[name="mode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const mode = e.target.value;
+            updateModeUI(mode);
+        });
+    });
     
     /**
      * 将 profile 对象渲染到表单 UI
@@ -341,12 +375,26 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // ========== 保存配置 ==========
     document.getElementById('save-config-btn').addEventListener('click', () => {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const backendUrl = document.getElementById('backend-url').value.trim() || 'http://localhost:3000';
+        
         const config = {
-            apiKey: document.getElementById('api-key').value.trim(),
-            model: document.getElementById('api-model').value
+            mode: mode,
+            backendUrl: backendUrl
         };
         
-        console.log('⚙️ 保存配置:', { ...config, apiKey: config.apiKey ? '***' : '(空)' });
+        // Free 模式需要保存 provider, apiKey, model
+        if (mode === 'free') {
+            config.provider = document.getElementById('api-provider').value;
+            config.apiKey = document.getElementById('api-key').value.trim();
+            config.model = document.getElementById('api-model').value;
+        }
+        
+        console.log('⚙️ 保存配置:', { 
+            ...config, 
+            apiKey: config.apiKey ? '***' : '(空)',
+            mode: config.mode 
+        });
         
         chrome.storage.local.set({ config }, () => {
             if (chrome.runtime.lastError) {
@@ -373,28 +421,47 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // ========== 简历解析功能：文件上传 + 解析 + 回填 ==========
+    // 快速导入栏控件
     const fileInput = document.getElementById('resume-file-input');
+    const chooseFileBtn = document.getElementById('choose-file-btn');
     const parseBtn = document.getElementById('parse-resume-btn');
-    const statusEl = document.getElementById('parse-status');
+    const aiFillBtn = document.getElementById('ai-fill-btn');
+    const statusEl = document.getElementById('smart-fill-status'); // 统一状态栏
     
-    // 文件选择事件：更新状态显示
+    // 选择文件按钮：触发文件选择对话框
+    chooseFileBtn.addEventListener('click', () => {
+        fileInput.click();
+    });
+    
+    // 文件选择事件：更新统一状态栏
     fileInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
             const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-            statusEl.textContent = `✅ 已选择：${file.name} (${sizeMB} MB)`;
-            statusEl.style.color = '#48bb78';
-            statusEl.style.background = 'rgba(72, 187, 120, 0.1)';
+            updateStatus(`✅ 已选择：${file.name} (${sizeMB} MB)`, 'success');
         } else {
-            statusEl.textContent = '未选择文件';
-            statusEl.style.color = '#64748b';
-            statusEl.style.background = 'rgba(100, 116, 139, 0.08)';
+            updateStatus('未选择文件', 'default');
         }
     });
     
     // 解析按钮点击事件
     parseBtn.addEventListener('click', async () => {
         await onParseResumeClick();
+    });
+    
+    // 智能填充按钮点击事件（已移动到智能填充界面）
+    aiFillBtn.addEventListener('click', async () => {
+        const data = await chrome.storage.local.get(['profile', 'config']);
+        if (!data.config) {
+            updateStatus('❌ 请先到「⚙️ 设置」页面配置', 'error');
+            return alert('请先到「⚙️ 设置」页面配置');
+        }
+        if (data.config.mode === 'free' && !data.config.apiKey) {
+            updateStatus('❌ 请先配置 API Key（免费模式）', 'error');
+            return alert('请先配置 API Key（免费模式）');
+        }
+        
+        runAiAutoFill(data.config, data.profile, aiFillBtn);
     });
     
     /**
@@ -454,7 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     /**
-     * 解析简历按钮点击处理函数
+     * 解析简历按钮点击处理函数（改为调用后端）
      */
     async function onParseResumeClick() {
         const file = fileInput.files[0];
@@ -495,36 +562,78 @@ document.addEventListener('DOMContentLoaded', () => {
             console.warn(`⚠️ 大型 Word 文件（${fileSizeMB.toFixed(2)} MB），解析可能需要 20-40 秒`);
         }
         
-        // 4. 获取 AI API 配置
+        // 4. 获取配置（与快速填充保持一致）
         const configResult = await new Promise((resolve) => {
             chrome.storage.local.get('config', resolve);
         });
         
-        if (!configResult.config || !configResult.config.apiKey) {
-            alert('请先到「⚙️ 设置」页面配置 API Key');
-            return;
+        const config = configResult.config || {};
+        const mode = config.mode || 'free';
+        const backendUrl = config.backendUrl || 'http://localhost:3000';
+        
+        // Free 模式需要 API Key
+        if (mode === 'free') {
+            if (!config.apiKey) {
+                alert('请先到「⚙️ 设置」页面配置 API Key（免费模式）');
+                return;
+            }
         }
         
-        const { apiKey, model } = configResult.config;
-        
-        // 5. 解析过程状态管理
+            // 5. 解析过程状态管理
         parseBtn.disabled = true;
-        statusEl.textContent = '⏳ 步骤 1/3: 提取文件文本...';
-        statusEl.style.color = '#4a90e2';
-        statusEl.style.background = 'rgba(74, 144, 226, 0.1)';
-        console.log('📄 开始解析上传的简历文件...');
-        
-        // 创建进度更新函数
-        const updateProgress = (step, total, message) => {
-            statusEl.textContent = `⏳ 步骤 ${step}/${total}: ${message}`;
-        };
+        updateStatus('⏳ 步骤 1/2: 读取文件...', 'info');
+        console.log('📄 开始解析上传的简历文件（使用后端服务）...');
         
         try {
-            // 6. 调用 profile.js 的解析函数（传入 API 配置和进度回调）
-            const parsedProfile = await window.parseResumeFile(file, apiKey, model, updateProgress);
+            // 6. 读取文件并转换为 base64（与快速填充保持一致）
+            updateStatus('⏳ 步骤 1/2: 读取文件...', 'info');
+            const fileContentBase64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    // 移除 data:...;base64, 前缀
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = () => reject(new Error('文件读取失败'));
+                reader.readAsDataURL(file);
+            });
+            
+            // 7. 构造请求体（与快速填充保持一致）
+            const parseBody = {
+                mode: mode,
+                fileName: file.name,
+                fileContentBase64: fileContentBase64
+            };
+            
+            if (mode === 'free') {
+                parseBody.provider = config.provider || 'siliconflow';
+                parseBody.apiKey = config.apiKey;
+                parseBody.model = config.model || 'Qwen/Qwen2.5-72B-Instruct';
+            }
+            
+            // 8. 调用后端 API 解析
+            updateStatus('⏳ 步骤 2/2: AI 解析中（这可能需要 10-30 秒）...', 'info');
+            const parseResponse = await fetch(`${backendUrl}/api/parse-resume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(parseBody)
+            });
+            
+            if (!parseResponse.ok) {
+                const errorData = await parseResponse.json().catch(() => ({ error: '未知错误' }));
+                throw new Error(errorData.error || `HTTP ${parseResponse.status}`);
+            }
+            
+            const parseResult = await parseResponse.json();
+            
+            if (!parseResult.success) {
+                throw new Error(parseResult.error || '解析失败');
+            }
+            
+            const parsedProfile = parseResult.profile;
             console.log('✅ 简历解析成功，准备更新 profile');
             
-            // 7. 获取当前 profile 并合并
+            // 9. 获取当前 profile 并合并（保持原有逻辑）
             const result = await new Promise((resolve) => {
                 chrome.storage.local.get('profile', resolve);
             });
@@ -532,8 +641,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const newProfile = mergeProfiles(currentProfile, parsedProfile);
             console.log('🔀 profile 合并完成', newProfile);
             
-            // 8. 渲染到表单（使用批量更新优化性能）
-            statusEl.textContent = '⏳ 正在渲染到表单...';
+            // 10. 渲染到表单（使用批量更新优化性能）
+            updateStatus('⏳ 正在渲染到表单...', 'info');
             // 使用 requestAnimationFrame 批量更新，避免阻塞
             await new Promise(resolve => {
                 requestAnimationFrame(() => {
@@ -543,7 +652,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             });
             
-            // 9. 保存到 storage
+            // 11. 保存到 storage
             await new Promise((resolve, reject) => {
                 chrome.storage.local.set({ profile: newProfile }, () => {
                     if (chrome.runtime.lastError) {
@@ -555,10 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             console.log('✅ profile 已更新并渲染到表单');
             
-            // 10. 成功状态反馈
-            statusEl.textContent = '✅ 解析成功，已填入表单，请确认后保存或直接使用智能填充';
-            statusEl.style.color = '#48bb78';
-            statusEl.style.background = 'rgba(72, 187, 120, 0.15)';
+            // 12. 成功状态反馈
+            updateStatus('✅ 解析成功，已填入表单，请确认后保存或直接使用智能填充', 'success');
             
             // 按钮动效
             parseBtn.style.background = 'linear-gradient(135deg, #48bb78 0%, #38a169 100%)';
@@ -569,33 +676,40 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 2000);
             
         } catch (error) {
-            // 10. 错误处理
+            // 错误处理
             console.error('❌ 解析失败:', error);
-            statusEl.textContent = `❌ 解析失败：${error.message}`;
-            statusEl.style.color = '#e74c3c';
-            statusEl.style.background = 'rgba(231, 76, 60, 0.1)';
-            alert(`解析失败：${error.message}
-
-请检查：
-1. 后端 API 是否正常运行
-2. 网络连接是否正常
-3. 文件格式是否正确`);
+            updateStatus(`❌ 解析失败：${error.message}`, 'error');
+            
+            // 根据错误类型提供不同的提示
+            let errorMessage = `解析失败：${error.message}`;
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行（${backendUrl}）\n2. 网络连接是否正常\n3. 如果后端在其他地址，请在「⚙️ 设置」中修改后端服务地址`;
+            } else if (error.message.includes('HTTP')) {
+                errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行\n2. 如果使用免费模式，API Key 是否正确\n3. 如果使用 Pro 模式，后端是否配置了 PRO_QWEN_API_KEY`;
+            } else {
+                errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行（${backendUrl}）\n2. 文件格式是否正确\n3. 网络连接是否正常`;
+            }
+            
+            alert(errorMessage);
         } finally {
-            // 11. 恢复按钮状态
+            // 恢复按钮状态
             parseBtn.disabled = false;
         }
     }
 
     // ========== AI 运行 ==========
-    const aiFillBtn = document.getElementById('ai-fill-btn');
-    aiFillBtn.addEventListener('click', async () => {
-        const data = await chrome.storage.local.get(['profile', 'config']);
-        if (!data.config?.apiKey) return alert('请先设置 API Key');
-        
-        runAiAutoFill(data.config, data.profile, aiFillBtn);
-    });
+    // 注意：ai-fill-btn 已移动到智能填充界面，事件绑定在快速导入栏控件初始化部分
 
     // ========== 快速填充（10秒内完成）==========
+    // 一键解析填充界面：简历上传按钮（复用智能填充界面的文件选择控件）
+    const quickUploadBtn = document.getElementById('quick-upload-btn');
+    if (quickUploadBtn) {
+        quickUploadBtn.addEventListener('click', () => {
+            // 复用智能填充界面的文件选择控件，触发文件选择对话框
+            fileInput.click();
+        });
+    }
+    
     const quickFillBtn = document.getElementById('quick-fill-btn');
     if (quickFillBtn) {
         quickFillBtn.addEventListener('click', async () => {
@@ -605,7 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 检查是否有上传的简历文件
             const file = fileInput.files[0];
             if (!file) {
-                alert('请先上传简历文件（PDF 或 Word）');
+                alert('请先通过「📁 简历上传」选择一个 PDF/Word 简历文件');
                 return;
             }
             
@@ -614,12 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 快速填充：10秒内完成简历解析和填充（不使用规则匹配）
-     * 策略：
-     * 1. 并行处理：同时提取文本和扫描表单
-     * 2. 合并AI调用：一次性解析简历并匹配字段
-     * 3. 优化prompt：更简洁，减少token
-     * 4. 直接填充：跳过中间步骤
+     * 快速填充：10秒内完成简历解析和填充（改为调用后端）
      */
     async function runQuickFill(config, file, btn) {
         const startTime = Date.now();
@@ -628,100 +737,94 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.textContent = '⚡ 快速处理中...';
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             
+            const backendUrl = config.backendUrl || 'http://localhost:3000';
+            const mode = config.mode || 'free';
+            
             log('⚡ 开始快速填充（目标：10秒内完成）...');
             
-            // ========== 步骤1：并行处理 ==========
-            log('📋 步骤1/4: 并行处理（提取文本 + 扫描表单）...');
-            btn.textContent = '⚡ 并行处理...';
+            // ========== 步骤1：解析简历 ==========
+            log('📋 步骤1/3: 解析简历...');
+            btn.textContent = '📋 解析简历...';
             
-            // 注入 content_script.js（用于扫描表单）
+            // 读取文件并转换为 base64
+            const fileContentBase64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    // 移除 data:...;base64, 前缀
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = () => reject(new Error('文件读取失败'));
+                reader.readAsDataURL(file);
+            });
+            
+            // 调用后端解析
+            const parseBody = {
+                mode: mode,
+                fileName: file.name,
+                fileContentBase64: fileContentBase64
+            };
+            
+            if (mode === 'free') {
+                parseBody.provider = config.provider || 'siliconflow';
+                parseBody.apiKey = config.apiKey;
+                parseBody.model = config.model || 'Qwen/Qwen2.5-72B-Instruct';
+            }
+            
+            const parseResponse = await fetch(`${backendUrl}/api/parse-resume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(parseBody)
+            });
+            
+            if (!parseResponse.ok) {
+                const errorData = await parseResponse.json().catch(() => ({ error: '未知错误' }));
+                throw new Error(errorData.error || `HTTP ${parseResponse.status}`);
+            }
+            
+            const parseResult = await parseResponse.json();
+            if (!parseResult.success) {
+                throw new Error(parseResult.error || '解析失败');
+            }
+            
+            const profile = parseResult.profile;
+            log(`✅ 简历解析完成`);
+            
+            // ========== 步骤2：扫描表单并生成映射 ==========
+            log('🖱️ 步骤2/3: 扫描表单并生成映射...');
+            btn.textContent = '🖱️ 扫描表单...';
+            
+            // 注入 content_script.js
             await chrome.scripting.executeScript({ 
                 target: { tabId: tab.id }, 
                 files: ['content_script.js'] 
             });
             
-            // 并行执行：文本提取 + 表单扫描
-            const [extractedText, scanResult] = await Promise.all([
-                // 提取文本（使用 parseResumeFile 但只获取文本部分，不完整解析）
-                (async () => {
-                    try {
-                        // 使用 parseResumeFile 的文本提取部分
-                        // 注意：这里我们只提取文本，不进行AI解析
-                        const fileName = file.name.toLowerCase();
-                        
-                        if (fileName.endsWith('.pdf')) {
-                            // 直接调用 profile.js 内部函数（如果可用）
-                            // 否则使用完整解析但只取文本
-                            if (typeof window.extractTextFromPDF === 'function') {
-                                return await window.extractTextFromPDF(file);
-                            }
-                        } else if (fileName.endsWith('.docx')) {
-                            if (typeof window.extractTextFromWord === 'function') {
-                                return await window.extractTextFromWord(file, () => {});
-                            }
-                        }
-                        
-                        // 如果直接提取不可用，使用完整解析流程（但会慢一些）
-                        // 为了速度，我们使用一个简化的文本提取
-                        log('⚠️ 使用完整解析流程（可能较慢）...');
-                        const profile = await window.parseResumeFile(file, config.apiKey, config.model, () => {});
-                        // 将 profile 转换为文本描述
-                        return JSON.stringify(profile, null, 2);
-                    } catch (error) {
-                        console.error('文本提取失败:', error);
-                        throw new Error(`文本提取失败: ${error.message}`);
-                    }
-                })(),
-                // 扫描表单（等待脚本注入完成）
-                (async () => {
-                    await new Promise(r => setTimeout(r, 200));
-                    return await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
-                })()
-            ]);
+            await new Promise(r => setTimeout(r, 200));
+            const scanResult = await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
+            log(`扫描到 ${scanResult.fields.length} 个字段`);
             
-            const elapsed1 = Date.now() - startTime;
-            log(`✅ 并行处理完成（${elapsed1}ms），文本长度: ${extractedText.length}，字段数: ${scanResult.fields.length}`);
+            // 扩展表单
+            const counts = inferSectionCounts({}, scanResult.fields); // 简化：从字段推断
+            await chrome.tabs.sendMessage(tab.id, { action: 'EXPAND_FORM', counts });
             
-            // ========== 步骤2：合并AI调用（解析+匹配）==========
-            log('🧠 步骤2/4: AI 解析并匹配（合并调用）...');
-            btn.textContent = '🧠 AI 处理中...';
+            // 重新扫描
+            const finalScan = await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
             
-            const mapping = await callQuickFillAPI(
-                config.apiKey, 
-                config.model, 
-                extractedText, 
-                scanResult.fields,
-                file.name
-            );
+            // 调用后端生成映射
+            btn.textContent = '🧠 AI 匹配中...';
+            const mapping = await callBackendFillMappingAPI(backendUrl, mode, config, profile, finalScan.fields);
             
             const elapsed2 = Date.now() - startTime;
             log(`✅ AI 处理完成（${elapsed2}ms），匹配了 ${Object.keys(mapping).filter(k => mapping[k] !== null).length} 个字段`);
             
-            // ========== 步骤3：扩展表单 ==========
-            log('🖱️ 步骤3/4: 扩展表单...');
-            btn.textContent = '🖱️ 扩展表单...';
-            
-            // 从 mapping 推断需要扩展的数量
-            const counts = inferSectionCounts(mapping, scanResult.fields);
-            await chrome.tabs.sendMessage(tab.id, { action: 'EXPAND_FORM', counts });
-            
-            // ========== 步骤4：填充数据 ==========
-            log('✍️ 步骤4/4: 填充数据...');
+            // ========== 步骤3：填充数据 ==========
+            log('✍️ 步骤3/3: 填充数据...');
             btn.textContent = '✍️ 填充中...';
-            
-            // 重新扫描（扩展后可能有新字段）
-            const finalScan = await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
-            const finalMapping = await callQuickFillAPI(
-                config.apiKey,
-                config.model,
-                extractedText,
-                finalScan.fields,
-                file.name
-            );
             
             const fillRes = await chrome.tabs.sendMessage(tab.id, { 
                 action: 'APPLY_MAPPING', 
-                mapping: finalMapping 
+                mapping: mapping 
             });
             
             const totalTime = Date.now() - startTime;
@@ -741,7 +844,7 @@ document.addEventListener('DOMContentLoaded', () => {
             log(`❌ 快速填充失败: ${e.message}（耗时: ${(totalTime/1000).toFixed(1)}秒）`);
             console.error(e);
             btn.textContent = '❌ 失败';
-            alert(`快速填充失败：${e.message}\n\n耗时: ${(totalTime/1000).toFixed(1)}秒`);
+            alert(`快速填充失败：${e.message}\n\n耗时: ${(totalTime/1000).toFixed(1)}秒\n\n请检查后端服务是否正常运行`);
         } finally {
             setTimeout(() => { 
                 btn.disabled = false; 
@@ -753,7 +856,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     /**
-     * 快速填充API调用（合并解析和匹配）
+     * 快速填充API调用（已废弃，改为调用后端）
      */
     async function callQuickFillAPI(apiKey, model, resumeText, formFields, fileName) {
         // 优化后的简洁 prompt
@@ -876,6 +979,21 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.disabled = true;
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             
+            // 获取后端地址和模式
+            const backendUrl = config.backendUrl || 'http://localhost:3000';
+            const mode = config.mode || 'free';
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:915',message:'runAiAutoFill started',data:{backendUrl,mode,hasApiKey:!!config.apiKey,hasProfile:!!profile},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
+            // Free 模式需要 API Key
+            if (mode === 'free' && !config.apiKey) {
+                alert('请先到「⚙️ 设置」页面配置 API Key（免费模式）');
+                btn.disabled = false;
+                return;
+            }
+            
             // ========== 第一阶段：基础规则填充 ==========
             log('📋 第一阶段：基础规则填充...');
             btn.textContent = '📋 基础填充...';
@@ -949,8 +1067,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const scanRes = await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_FORM' });
             log(`扫描到 ${scanRes.fields.length} 个字段`);
 
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:989',message:'before callBackendFillMappingAPI',data:{fieldsCount:scanRes.fields.length,backendUrl,mode},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
+
             btn.textContent = '🧠 AI 匹配中...';
-            const mapping = await callDeepSeekAPI(config.apiKey, config.model, profile, scanRes.fields);
+            // 调用后端 API 生成映射
+            const mapping = await callBackendFillMappingAPI(backendUrl, mode, config, profile, scanRes.fields);
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:995',message:'after callBackendFillMappingAPI',data:{mappingKeysCount:Object.keys(mapping).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             
             btn.textContent = '✍️ 写入数据...';
             const fillRes = await chrome.tabs.sendMessage(tab.id, { action: 'APPLY_MAPPING', mapping });
@@ -962,9 +1089,13 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.textContent = '✅ 完成';
 
         } catch (e) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1001',message:'runAiAutoFill error',data:{errorMessage:e.message,errorName:e.name,stack:e.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
             log(`❌ 错误: ${e.message}`);
             console.error(e);
             btn.textContent = '❌ 出错';
+            alert(`智能填充失败：${e.message}\n\n请检查后端服务是否正常运行`);
         } finally {
             setTimeout(() => { 
                 btn.disabled = false; 
@@ -973,12 +1104,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    /**
+     * 更新统一状态栏
+     * @param {string} message - 状态消息
+     * @param {string} type - 状态类型: 'default' | 'info' | 'success' | 'error'
+     */
+    function updateStatus(message, type = 'default') {
+        if (!statusEl) return;
+        
+        statusEl.textContent = message;
+        
+        // 根据类型设置样式
+        switch (type) {
+            case 'success':
+                statusEl.style.color = '#48bb78';
+                statusEl.style.background = 'rgba(72, 187, 120, 0.15)';
+                break;
+            case 'error':
+                statusEl.style.color = '#e74c3c';
+                statusEl.style.background = 'rgba(231, 76, 60, 0.1)';
+                break;
+            case 'info':
+                statusEl.style.color = '#4a90e2';
+                statusEl.style.background = 'rgba(74, 144, 226, 0.1)';
+                break;
+            default:
+                statusEl.style.color = '#64748b';
+                statusEl.style.background = 'rgba(100, 116, 139, 0.08)';
+        }
+    }
+    
+    /**
+     * 日志记录函数（用于智能填充流程）
+     * 现在也会更新统一状态栏，同时在控制台输出
+     * @param {string} msg - 日志消息
+     */
     function log(msg) {
-        const area = document.getElementById('log-area');
-        const div = document.createElement('div');
-        div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        area.appendChild(div);
-        area.scrollTop = area.scrollHeight;
+        // 更新统一状态栏
+        updateStatus(msg, 'info');
+        
+        // 同时在控制台输出（便于调试）
+        console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
     }
 
     function setupTabs() {
@@ -992,108 +1158,72 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ========== AI API 调用 ==========
-    async function callDeepSeekAPI(apiKey, model, profile, formFields) {
-        const systemPrompt = `你是一个精准的网页填表助手。你的核心任务是解决【数据错位】问题、【多段经历匹配】并进行【格式标准化】。
-
-输入：
-1. User Resume (JSON): 包含以下维度的数据：
-   - basic: 基本信息（name, gender, phone, email, birthDate, ethnicity, nationality, hometown, currentAddress, maritalStatus, politicalStatus, height, weight）
-   - education[]: 教育经历数组
-   - award[]: 获奖经历数组
-   - competition[]: 竞赛经历数组
-   - project[]: 项目经历数组
-   - internship[]: 实习经历数组
-   - workExperience[]: 工作经历数组
-   - campus: { leader[], activity[] } 在校经历
-   - socialPractice: { volunteer[], project[] } 社会实践
-   - professionalAchievement: { paper[], patent[], conference[] } 专业成果
-   - language[]: 语言能力数组
-   - certificate[]: 专业资格证书数组
-   - familyMembers[]: 家庭成员信息数组
-   - skill: { description } 技能描述
-   - selfEvaluation: { description } 自我评价
-   - specialNotes: { description } 特殊说明
-
-2. Web Fields (JSON): 网页字段列表，每个字段包含:
-   - id: 字段唯一标识
-   - label: 字段标签
-   - type: 字段类型
-   - context: 上下文类型
-   - sectionIndex: 该字段所属的段落索引（0表示第一段）
-   - options: 下拉框选项（如果有）
-
-必须严格遵守的【多段经历匹配与反错位规则】：
-
-1. **Context + SectionIndex 双重隔离**:
-   - 字段的 'context' 决定数据源类型
-   - 字段的 'sectionIndex' 决定使用该类型数据的第几段
-   - Context映射：
-     * "Education" -> resume.education[sectionIndex]
-     * "Work/Internship" -> 优先resume.internship[sectionIndex]，其次resume.workExperience[sectionIndex]
-     * "Work Experience" -> resume.workExperience[sectionIndex]
-     * "Project" -> resume.project[sectionIndex]
-     * "Award" -> resume.award[sectionIndex]
-     * "Competition" -> resume.competition[sectionIndex]
-     * "Language" -> resume.language[sectionIndex]
-     * "Certificate" -> resume.certificate[sectionIndex]
-     * "Family" -> resume.familyMembers[sectionIndex]
-     * "Campus Leader" -> resume.campus.leader[sectionIndex]
-     * "Campus Activity" -> resume.campus.activity[sectionIndex]
-     * "Volunteer" -> resume.socialPractice.volunteer[sectionIndex]
-     * "Social Project" -> resume.socialPractice.project[sectionIndex]
-     * "Paper" -> resume.professionalAchievement.paper[sectionIndex]
-     * "Patent" -> resume.professionalAchievement.patent[sectionIndex]
-     * "Conference" -> resume.professionalAchievement.conference[sectionIndex]
-     * "Basic Info" -> resume.basic (无索引)
-     * "Skill" -> resume.skill.description
-     * "Self Evaluation" -> resume.selfEvaluation.description
-     * "Special Notes" -> resume.specialNotes.description
-
-2. **数据数组边界检查**:
-   - 如果 sectionIndex 超出数据数组长度，返回 null
-
-3. **时间格式标准化**:
-   - 统一转为 "YYYY.M" (如 "2025.8")
-   - 单独月份输入框：去除前导零 ("02" -> "2")
-   - 单独年份输入框：保留完整年份
-
-4. **下拉框智能匹配**:
-   - 优先完全匹配 value 或 text
-   - 次选包含匹配
-   - 无匹配时返回 null
-
-5. **空值处理**:
-   - 数据不存在或为空时返回 null
-
-返回格式：{ "field_id": "value" 或 null }`;
-
-        const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
+    /**
+     * 调用后端 API 生成填充映射
+     */
+    async function callBackendFillMappingAPI(backendUrl, mode, config, profile, fields) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1060',message:'callBackendFillMappingAPI entry',data:{backendUrl,mode,fieldsCount:fields.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        const body = {
+            mode: mode,
+            profile: profile,
+            fields: fields
+        };
+        
+        if (mode === 'free') {
+            body.provider = config.provider || 'siliconflow';
+            body.apiKey = config.apiKey;
+            body.model = config.model || 'Qwen/Qwen2.5-72B-Instruct';
+        }
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1075',message:'before fetch fill-mapping',data:{url:`${backendUrl}/api/fill-mapping`,mode,hasApiKey:mode==='free'?!!body.apiKey:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        const response = await fetch(`${backendUrl}/api/fill-mapping`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
+                'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                model: model || "Qwen/Qwen2.5-72B-Instruct",
-                messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: JSON.stringify({ user_resume: profile, web_fields: formFields }) }
-                ],
-                response_format: { type: "json_object" },
-                temperature: 0.1,
-                max_tokens: 8192
-            })
+            body: JSON.stringify(body)
         });
-
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
         
-        const content = data.choices[0].message.content;
-        console.log("🤖 DeepSeek Raw Output:", content);
-        log("🤖 模型返回数据");
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1087',message:'after fetch fill-mapping',data:{status:response.status,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: '未知错误' }));
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1093',message:'fill-mapping error',data:{status:response.status,error:errorData.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1101',message:'fill-mapping result not success',data:{error:result.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            throw new Error(result.error || '生成映射失败');
+        }
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/574377c9-6e22-46d9-86c6-10d078667423',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'popup.js:1107',message:'callBackendFillMappingAPI success',data:{mappingKeysCount:Object.keys(result.mapping).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        
+        return result.mapping;
+    }
 
-        return JSON.parse(content);
+    // ========== AI API 调用（已废弃，改为调用后端）==========
+    // 保留此函数以保持向后兼容，但实际已不再使用
+    async function callDeepSeekAPI(apiKey, model, profile, formFields) {
+        console.warn('[Deprecated] callDeepSeekAPI 已废弃，请使用 callBackendFillMappingAPI');
+        // 此函数不再使用，所有调用已改为后端 API
+        throw new Error('此函数已废弃，请使用后端 API');
     }
 
     // =====================================================

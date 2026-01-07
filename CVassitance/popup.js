@@ -856,86 +856,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     /**
-     * 快速填充API调用（已废弃，改为调用后端）
-     */
-    async function callQuickFillAPI(apiKey, model, resumeText, formFields, fileName) {
-        // 优化后的简洁 prompt
-        const systemPrompt = `你是简历解析和表单填充助手。一次性完成两个任务：
-1. 从简历文本提取结构化信息
-2. 将信息匹配到表单字段
-
-输入：
-- resume_text: 简历纯文本
-- form_fields: 表单字段列表 [{id, label, type, context, sectionIndex, options?}]
-
-规则：
-- context决定数据源：Education->education[], Work/Internship->internship[]或workExperience[], Basic Info->basic, 等等
-- sectionIndex决定使用第几段数据（0=第一段）
-- 时间格式：YYYY.M
-- 下拉框：匹配options中的value或text
-
-返回：{"field_id": "value" 或 null}`;
-
-        // 限制文本长度（快速处理）
-        const maxTextLength = 6000; // 减少到6000字符，加快处理
-        const truncatedText = resumeText.length > maxTextLength 
-            ? resumeText.substring(0, maxTextLength) + '\n[已截断]'
-            : resumeText;
-        
-        // 限制字段数量（只处理前50个字段，加快处理）
-        const limitedFields = formFields.slice(0, 50);
-        
-        const userPrompt = `简历：${fileName}\n\n${truncatedText}\n\n表单字段：${JSON.stringify(limitedFields)}`;
-        
-        const requestBody = {
-            model: model || "Qwen/Qwen2.5-72B-Instruct",
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userPrompt }
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.1,
-            max_tokens: 4096 // 减少token，加快响应
-        };
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8秒超时（快速模式）
-        
-        try {
-            const response = await fetch('https://api.siliconflow.cn/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify(requestBody),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
-            
-            if (!response.ok) {
-                throw new Error(`API 调用失败: HTTP ${response.status}`);
-            }
-            
-            const data = await response.json();
-            if (data.error) {
-                throw new Error(`API 错误: ${data.error.message}`);
-            }
-            
-            const content = data.choices[0].message.content;
-            return JSON.parse(content);
-            
-        } catch (error) {
-            clearTimeout(timeoutId);
-            if (error.name === 'AbortError') {
-                throw new Error('AI 处理超时（8秒），请尝试使用较小的简历文件');
-            }
-            throw error;
-        }
-    }
-    
-    /**
      * 从 mapping 推断需要扩展的段落数量
      */
     function inferSectionCounts(mapping, fields) {
@@ -1218,13 +1138,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return result.mapping;
     }
 
-    // ========== AI API 调用（已废弃，改为调用后端）==========
-    // 保留此函数以保持向后兼容，但实际已不再使用
-    async function callDeepSeekAPI(apiKey, model, profile, formFields) {
-        console.warn('[Deprecated] callDeepSeekAPI 已废弃，请使用 callBackendFillMappingAPI');
-        // 此函数不再使用，所有调用已改为后端 API
-        throw new Error('此函数已废弃，请使用后端 API');
-    }
 
     // =====================================================
     // ========== 调试模块：字段识别诊断工具 ==========

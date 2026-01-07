@@ -58,9 +58,9 @@ app.post('/api/parse-resume', async (req, res) => {
     // 调用解析服务
     const profile = await parseResume({
       mode,
-      provider: mode === 'free' ? provider : undefined,
-      apiKey: mode === 'free' ? apiKey : process.env.PRO_QWEN_API_KEY,
-      model: mode === 'free' ? model : process.env.PRO_QWEN_MODEL || 'Qwen/Qwen2.5-32B-Instruct',
+      provider: mode === 'free' ? provider : 'siliconflow',
+      apiKey: mode === 'free' ? apiKey : process.env.PRO_SILICONFLOW_API_KEY,
+      model: mode === 'free' ? model : process.env.PRO_SILICONFLOW_MODEL || 'Qwen/Qwen2.5-72B-Instruct',
       fileName,
       fileContentBase64
     });
@@ -109,9 +109,9 @@ app.post('/api/fill-mapping', async (req, res) => {
     // 调用映射生成服务
     const mapping = await generateFillMapping({
       mode,
-      provider: mode === 'free' ? provider : undefined,
-      apiKey: mode === 'free' ? apiKey : process.env.PRO_QWEN_API_KEY,
-      model: mode === 'free' ? model : process.env.PRO_QWEN_MODEL || 'Qwen/Qwen2.5-32B-Instruct',
+      provider: mode === 'free' ? provider : 'siliconflow',
+      apiKey: mode === 'free' ? apiKey : process.env.PRO_SILICONFLOW_API_KEY,
+      model: mode === 'free' ? model : process.env.PRO_SILICONFLOW_MODEL || 'Qwen/Qwen2.5-72B-Instruct',
       profile,
       fields
     });
@@ -134,5 +134,5 @@ app.post('/api/fill-mapping', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 CVassit Backend Server running on http://localhost:${PORT}`);
   console.log(`📝 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔧 Mode: ${process.env.PRO_QWEN_API_KEY ? 'Pro mode configured' : 'Pro mode not configured (set PRO_QWEN_API_KEY)'}`);
+  console.log(`🔧 Mode: ${process.env.PRO_SILICONFLOW_API_KEY ? 'Pro mode configured' : 'Pro mode not configured (set PRO_SILICONFLOW_API_KEY)'}`);
 });

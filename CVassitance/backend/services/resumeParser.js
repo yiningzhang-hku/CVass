@@ -178,7 +178,7 @@ async function callAIParseAPI(textContent, fileName, config) {
   const userPrompt = `请解析以下简历文件（${fileName}）中的内容，提取所有结构化信息：\n\n${truncatedText}`;
 
   // 获取实际的 provider 和 model
-  const actualProvider = config.provider || 'internal_qwen';
+  const actualProvider = config.provider || 'siliconflow';
   const actualModel = config.model;
   
   // #region agent log

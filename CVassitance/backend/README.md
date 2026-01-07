@@ -21,10 +21,10 @@ npm install
 cp .env.example .env
 ```
 
-2. 编辑 `.env` 文件，设置 Pro 模式的 Qwen API Key:
+2. 编辑 `.env` 文件，设置 Pro 模式的 SiliconFlow API Key:
 ```
-PRO_QWEN_API_KEY=your_qwen_official_api_key_here
-PRO_QWEN_MODEL=Qwen/Qwen2.5-32B-Instruct
+PRO_SILICONFLOW_API_KEY=your_siliconflow_api_key_here
+PRO_SILICONFLOW_MODEL=Qwen/Qwen2.5-72B-Instruct
 ```
 
 ## 运行
@@ -114,8 +114,7 @@ npm start
 
 ## 支持的 Provider
 
-- `siliconflow`: SiliconFlow (通过 SiliconFlow API)
+- `siliconflow`: SiliconFlow (通过 SiliconFlow API，Pro 模式默认使用)
 - `deepseek_official`: DeepSeek 官方 API
-- `qwen_official`: 通义千问官方 API
 - `kimi_official`: Kimi 官方 API
-- `internal_qwen`: 内部 Qwen (Pro 模式使用)
+- `internal_qwen`: 内部 Qwen (已废弃，仅用于向后兼容)

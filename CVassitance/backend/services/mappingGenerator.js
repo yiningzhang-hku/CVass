@@ -100,7 +100,7 @@ async function generateFillMapping(options) {
 
   // 调用 LLM
   const response = await callChatCompletion({
-    provider: provider || 'internal_qwen',
+    provider: provider || 'siliconflow',
     apiKey: apiKey,
     model: model
   }, [

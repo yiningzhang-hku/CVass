@@ -8,7 +8,7 @@ const fetch = require('node-fetch');
 /**
  * Provider 配置接口
  * @typedef {Object} ProviderConfig
- * @property {"siliconflow"|"deepseek_official"|"qwen_official"|"kimi_official"|"internal_qwen"} provider - Provider 名称
+ * @property {"siliconflow"|"deepseek_official"|"kimi_official"|"internal_qwen"} provider - Provider 名称
  * @property {string} apiKey - API Key
  * @property {string} model - 模型名称
  */
@@ -107,8 +107,8 @@ async function callChatCompletion(config, messages, options = {}) {
           helpfulMessage += `\n\n提示：SiliconFlow 支持的模型格式为 Qwen/Qwen2.5-72B-Instruct 或 deepseek-ai/DeepSeek-V3`;
         } else if (provider === 'deepseek_official') {
           helpfulMessage += `\n\n提示：DeepSeek 官方支持的模型为 deepseek-chat 或 deepseek-reasoner`;
-        } else if (provider === 'qwen_official' || provider === 'internal_qwen') {
-          helpfulMessage += `\n\n提示：通义千问官方支持的模型为 qwen-plus、qwen-turbo 或 qwen-max`;
+        } else if (provider === 'internal_qwen') {
+          helpfulMessage += `\n\n提示：内部 Qwen 支持的模型为 qwen-flash、qwen-plus 或 qwen3-max`;
         } else if (provider === 'kimi_official') {
           helpfulMessage += `\n\n提示：Kimi 官方支持的模型为 kimi-k2-0905-preview、kimi-k2-turbo-preview、kimi-k2-thinking 或 kimi-k2-thinking-turbo`;
         }
@@ -127,8 +127,8 @@ async function callChatCompletion(config, messages, options = {}) {
       throw new Error(`API 错误: ${data.error.message || JSON.stringify(data.error)}`);
     }
 
-    // Qwen 官方 API 的响应格式不同
-    if (provider === 'qwen_official' || provider === 'internal_qwen') {
+    // 内部 Qwen API 的响应格式不同
+    if (provider === 'internal_qwen') {
       if (data.output && data.output.choices && data.output.choices[0]) {
         return data.output.choices[0].message.content;
       }
@@ -163,7 +163,6 @@ function getProviderEndpoint(provider) {
   const endpoints = {
     'siliconflow': 'https://api.siliconflow.cn/v1/chat/completions',
     'deepseek_official': 'https://api.deepseek.com/v1/chat/completions',  // 修复：添加 /chat/completions
-    'qwen_official': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
     'kimi_official': 'https://api.moonshot.ai/v1/chat/completions',  // 修复：添加 /chat/completions
     'internal_qwen': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
   };
@@ -196,7 +195,6 @@ function getProviderHeaders(provider, apiKey) {
         'Authorization': `Bearer ${apiKey}`
       };
 
-    case 'qwen_official':
     case 'internal_qwen':
       return {
         ...baseHeaders,
@@ -258,33 +256,42 @@ function normalizeModelName(provider, model) {
     return model;
   }
 
-  // Qwen 官方: 使用 qwen-plus, qwen-turbo, qwen-max 等格式
-  if (provider === 'qwen_official' || provider === 'internal_qwen') {
-    // 如果用户输入的是 SiliconFlow 格式，尝试转换
+  // 内部 Qwen: 使用 qwen-flash, qwen-plus, qwen3-max 等格式（仅用于 internal_qwen，已废弃 qwen_official）
+  if (provider === 'internal_qwen') {
+    // 如果模型名已经是官方格式（qwen-flash、qwen-plus、qwen3-max 或以 qwen- / qwen3- 开头）
+    if (model.startsWith('qwen-') || model.startsWith('qwen3-')) {
+      return model;
+    }
+    
+    // 如果用户输入的是旧格式 Qwen/Qwen2.5-...，尝试映射
     if (model.startsWith('Qwen/')) {
-      // 尝试映射常见的 Qwen 模型
+      // 尝试映射常见的 Qwen 模型到新的官方格式
       const modelMap = {
         'Qwen/Qwen2.5-72B-Instruct': 'qwen-plus',
         'Qwen/Qwen2.5-32B-Instruct': 'qwen-plus',
-        'Qwen/Qwen2.5-14B-Instruct': 'qwen-turbo',
-        'Qwen/Qwen2.5-7B-Instruct': 'qwen-turbo',
+        'Qwen/Qwen2.5-14B-Instruct': 'qwen-plus',
+        'Qwen/Qwen2.5-7B-Instruct': 'qwen-flash',
         'Qwen/Qwen2-72B-Instruct': 'qwen-plus',
-        'Qwen/Qwen2-32B-Instruct': 'qwen-turbo',
-        'Qwen/Qwen2-14B-Instruct': 'qwen-turbo',
-        'Qwen/Qwen2-7B-Instruct': 'qwen-turbo'
+        'Qwen/Qwen2-32B-Instruct': 'qwen-plus',
+        'Qwen/Qwen2-14B-Instruct': 'qwen-plus',
+        'Qwen/Qwen2-7B-Instruct': 'qwen-flash'
       };
       if (modelMap[model]) {
-        console.log(`[LLM Provider] 将模型名称 "${model}" 映射为 Qwen 官方格式 "${modelMap[model]}"`);
+        console.log(`[LLM Provider] 将旧格式模型名称 "${model}" 映射为 Qwen 官方格式 "${modelMap[model]}"（建议在设置中切换为新的官方模型名）`);
         return modelMap[model];
       }
-      throw new Error(`Qwen 官方不支持模型 "${model}"，请使用 qwen-plus、qwen-turbo 或 qwen-max`);
+      // 如果不在映射表中，默认映射到 qwen-plus 并给出提示
+      console.warn(`[LLM Provider] 旧格式模型名称 "${model}" 未在映射表中，默认使用 qwen-plus。建议在设置中切换为 qwen-flash、qwen-plus 或 qwen3-max`);
+      return 'qwen-plus';
     }
-    // 如果已经是 qwen-xxx 格式，直接返回
-    if (model.startsWith('qwen-')) {
-      return model;
+    
+    // 如果模型名明显不属于 Qwen 官方（例如以 deepseek- 或 kimi- 等开头），抛出错误
+    if (model.startsWith('deepseek-') || model.startsWith('kimi-') || model.startsWith('moonshot-')) {
+      throw new Error(`内部 Qwen 不支持模型 "${model}"，请检查 provider 与模型是否匹配。内部 Qwen 支持的模型为 qwen-flash、qwen-plus 或 qwen3-max`);
     }
-    // 默认使用 qwen-plus
-    console.warn(`[LLM Provider] Qwen 官方模型名称 "${model}" 可能不正确，建议使用 qwen-plus、qwen-turbo 或 qwen-max`);
+    
+    // 其他未知格式，给出警告并尝试使用
+    console.warn(`[LLM Provider] 内部 Qwen 模型名称 "${model}" 可能不正确，建议使用 qwen-flash、qwen-plus 或 qwen3-max`);
     return model;
   }
 
@@ -336,8 +343,8 @@ function buildRequestBody(provider, model, messages, options) {
   } catch (e) {}
   // #endregion
 
-  // Qwen 官方 API 的格式略有不同
-  if (provider === 'qwen_official' || provider === 'internal_qwen') {
+  // 内部 Qwen API 的格式略有不同
+  if (provider === 'internal_qwen') {
     return {
       model: normalizedModel,
       input: {

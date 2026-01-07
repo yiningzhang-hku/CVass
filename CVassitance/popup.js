@@ -31,12 +31,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 { value: 'deepseek-chat', label: 'deepseek-chat（非思考模式）', group: 'DeepSeek 官方模型' },
                 { value: 'deepseek-reasoner', label: 'deepseek-reasoner（思考模式）', group: 'DeepSeek 官方模型' }
             ],
-            'qwen_official': [
-                // Qwen 官方模型
-                { value: 'qwen-plus', label: 'qwen-plus', group: '通义千问官方模型' },
-                { value: 'qwen-turbo', label: 'qwen-turbo', group: '通义千问官方模型' },
-                { value: 'qwen-max', label: 'qwen-max', group: '通义千问官方模型' }
-            ],
             'kimi_official': [
                 // Kimi 官方模型（Kimi K2 系列）
                 { value: 'kimi-k2-0905-preview', label: 'kimi-k2-0905-preview（最新版，256K 上下文）', group: 'Kimi 官方模型' },
@@ -110,7 +104,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const defaults = {
             'siliconflow': 'Qwen/Qwen2.5-72B-Instruct',
             'deepseek_official': 'deepseek-chat',
-            'qwen_official': 'qwen-plus',
             'kimi_official': 'kimi-k2-turbo-preview'
         };
         return defaults[provider] || defaults['siliconflow'];
@@ -230,13 +223,27 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 加载 Free 模式配置
             if (mode === 'free') {
-                const provider = config.provider || 'siliconflow';
-                const model = config.model || getDefaultModelForProvider(provider);
+                let provider = config.provider || 'siliconflow';
+                
+                // 兼容性处理：如果用户之前保存了 qwen_official，自动切换到 siliconflow
+                if (provider === 'qwen_official') {
+                    console.warn('[Config] 检测到已废弃的 qwen_official provider，自动切换到 siliconflow');
+                    provider = 'siliconflow';
+                }
+                
+                let model = config.model || getDefaultModelForProvider(provider);
                 
                 // 先设置 provider
                 document.getElementById('api-provider').value = provider;
                 
                 // 根据 provider 重建模型列表
+                // 获取该 provider 的模型列表，检查 model 是否在候选列表中
+                const availableModels = getModelOptionsForProvider(provider).map(m => m.value);
+                if (!availableModels.includes(model)) {
+                    // 如果 model 不在候选列表中（可能是旧格式），使用默认值
+                    model = getDefaultModelForProvider(provider);
+                }
+                
                 buildModelOptionsForProvider(provider, model);
                 
                 // 设置 API Key
@@ -825,7 +832,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
                 errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行（${backendUrl}）\n2. 网络连接是否正常\n3. 如果后端在其他地址，请在「⚙️ 设置」中修改后端服务地址`;
             } else if (error.message.includes('HTTP')) {
-                errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行\n2. 如果使用免费模式，API Key 是否正确\n3. 如果使用 Pro 模式，后端是否配置了 PRO_QWEN_API_KEY`;
+                errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行\n2. 如果使用免费模式，API Key 是否正确\n3. 如果使用 Pro 模式，后端是否配置了 PRO_SILICONFLOW_API_KEY`;
             } else {
                 errorMessage += `\n\n请检查：\n1. 后端服务是否正常运行（${backendUrl}）\n2. 文件格式是否正确\n3. 网络连接是否正常`;
             }

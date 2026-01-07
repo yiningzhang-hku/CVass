@@ -371,15 +371,17 @@
                     <label>平台 (Provider)</label>
                     <select id="api-provider">
                         <option value="siliconflow" selected>SiliconFlow</option>
-                        <option value="deepseek_official">DeepSeek 官方</option>
-                        <option value="qwen_official">通义千问官方</option>
-                        <option value="kimi_official">Kimi 官方</option>
+                        <option value="deepseek_official">DeepSeek</option>
+                        <option value="qwen_official">通义</option>
+                        <option value="kimi_official">Kimi</option>
                     </select>
                 </div>
                 <div class="form-group"><label>API Key</label><input type="password" id="api-key"></div>
                 <div class="form-group">
                     <label>模型</label>
                     <select id="api-model">
+                        <!-- 模型选项由 JavaScript 根据选择的 Provider 动态生成 -->
+                        <!--
                         <optgroup label="Qwen 系列（推荐）">
                             <option value="Qwen/Qwen2.5-72B-Instruct" selected>Qwen2.5-72B-Instruct（推荐）</option>
                             <option value="Qwen/Qwen2.5-32B-Instruct">Qwen2.5-32B-Instruct</option>
@@ -395,6 +397,7 @@
                             <option value="deepseek-ai/DeepSeek-V3">DeepSeek-V3</option>
                             <option value="deepseek-ai/DeepSeek-R1">DeepSeek-R1</option>
                         </optgroup>
+                        -->
                     </select>
                 </div>
             </div>

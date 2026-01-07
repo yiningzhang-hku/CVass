@@ -3,6 +3,119 @@ document.addEventListener('DOMContentLoaded', () => {
     
     setupTabs();
     
+    // ========== Provider 模型列表配置 ==========
+    /**
+     * 根据 Provider 获取对应的模型列表配置
+     * @param {string} provider - Provider 名称
+     * @returns {Array<{value: string, label: string, group?: string}>} 模型选项列表
+     */
+    function getModelOptionsForProvider(provider) {
+        const modelConfigs = {
+            'siliconflow': [
+                // Qwen 系列（推荐）
+                { value: 'Qwen/Qwen2.5-72B-Instruct', label: 'Qwen2.5-72B-Instruct（推荐）', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2.5-32B-Instruct', label: 'Qwen/Qwen2.5-32B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2.5-14B-Instruct', label: 'Qwen/Qwen2.5-14B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2.5-7B-Instruct', label: 'Qwen/Qwen2.5-7B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2-72B-Instruct', label: 'Qwen/Qwen2-72B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2-32B-Instruct', label: 'Qwen/Qwen2-32B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2-14B-Instruct', label: 'Qwen/Qwen2-14B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2-7B-Instruct', label: 'Qwen/Qwen2-7B-Instruct', group: 'Qwen 系列（推荐）' },
+                { value: 'Qwen/Qwen2-1.5B-Instruct', label: 'Qwen/Qwen2-1.5B-Instruct', group: 'Qwen 系列（推荐）' },
+                // DeepSeek 系列（SiliconFlow 风格）
+                { value: 'deepseek-ai/DeepSeek-V3', label: 'DeepSeek-V3', group: 'DeepSeek 系列' },
+                { value: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek-R1', group: 'DeepSeek 系列' }
+            ],
+            'deepseek_official': [
+                // DeepSeek 官方模型（官方格式）
+                { value: 'deepseek-chat', label: 'deepseek-chat（非思考模式）', group: 'DeepSeek 官方模型' },
+                { value: 'deepseek-reasoner', label: 'deepseek-reasoner（思考模式）', group: 'DeepSeek 官方模型' }
+            ],
+            'qwen_official': [
+                // Qwen 官方模型
+                { value: 'qwen-plus', label: 'qwen-plus', group: '通义千问官方模型' },
+                { value: 'qwen-turbo', label: 'qwen-turbo', group: '通义千问官方模型' },
+                { value: 'qwen-max', label: 'qwen-max', group: '通义千问官方模型' }
+            ],
+            'kimi_official': [
+                // Kimi 官方模型（Kimi K2 系列）
+                { value: 'kimi-k2-0905-preview', label: 'kimi-k2-0905-preview（最新版，256K 上下文）', group: 'Kimi 官方模型' },
+                { value: 'kimi-k2-turbo-preview', label: 'kimi-k2-turbo-preview（高速版本）', group: 'Kimi 官方模型' },
+                { value: 'kimi-k2-thinking', label: 'kimi-k2-thinking（长思考模型）', group: 'Kimi 官方模型' },
+                { value: 'kimi-k2-thinking-turbo', label: 'kimi-k2-thinking-turbo（长思考高速版）', group: 'Kimi 官方模型' }
+            ]
+        };
+        
+        return modelConfigs[provider] || modelConfigs['siliconflow']; // 默认返回 SiliconFlow 配置
+    }
+    
+    /**
+     * 根据 Provider 重建模型下拉框选项
+     * @param {string} provider - Provider 名称
+     * @param {string} selectedModel - 当前选中的模型值（可选）
+     */
+    function buildModelOptionsForProvider(provider, selectedModel = null) {
+        const modelSelect = document.getElementById('api-model');
+        if (!modelSelect) return;
+        
+        // 清空现有选项
+        modelSelect.innerHTML = '';
+        
+        // 获取该 Provider 的模型列表
+        const models = getModelOptionsForProvider(provider);
+        
+        // 按 group 分组
+        const groupedModels = {};
+        models.forEach(model => {
+            const group = model.group || '其他';
+            if (!groupedModels[group]) {
+                groupedModels[group] = [];
+            }
+            groupedModels[group].push(model);
+        });
+        
+        // 构建 optgroup 和 option
+        Object.keys(groupedModels).forEach(groupName => {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = groupName;
+            
+            groupedModels[groupName].forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.value;
+                option.textContent = model.label;
+                
+                // 如果指定了选中值，则设置 selected
+                if (selectedModel && model.value === selectedModel) {
+                    option.selected = true;
+                }
+                
+                optgroup.appendChild(option);
+            });
+            
+            modelSelect.appendChild(optgroup);
+        });
+        
+        // 如果没有指定选中值，选择第一个选项作为默认值
+        if (!selectedModel && modelSelect.options.length > 0) {
+            modelSelect.options[0].selected = true;
+        }
+    }
+    
+    /**
+     * 获取 Provider 的默认模型
+     * @param {string} provider - Provider 名称
+     * @returns {string} 默认模型值
+     */
+    function getDefaultModelForProvider(provider) {
+        const defaults = {
+            'siliconflow': 'Qwen/Qwen2.5-72B-Instruct',
+            'deepseek_official': 'deepseek-chat',
+            'qwen_official': 'qwen-plus',
+            'kimi_official': 'kimi-k2-turbo-preview'
+        };
+        return defaults[provider] || defaults['siliconflow'];
+    }
+    
     // ========== 维度配置：定义所有sections及其shortKey映射 ==========
     const sectionConfig = {
         // 多条目维度 (需要add/remove按钮)
@@ -117,9 +230,17 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 加载 Free 模式配置
             if (mode === 'free') {
-                document.getElementById('api-provider').value = config.provider || 'siliconflow';
+                const provider = config.provider || 'siliconflow';
+                const model = config.model || getDefaultModelForProvider(provider);
+                
+                // 先设置 provider
+                document.getElementById('api-provider').value = provider;
+                
+                // 根据 provider 重建模型列表
+                buildModelOptionsForProvider(provider, model);
+                
+                // 设置 API Key
                 document.getElementById('api-key').value = config.apiKey || '';
-                document.getElementById('api-model').value = config.model || 'Qwen/Qwen2.5-72B-Instruct';
             }
             
             // 加载后端地址
@@ -146,8 +267,27 @@ document.addEventListener('DOMContentLoaded', () => {
         radio.addEventListener('change', (e) => {
             const mode = e.target.value;
             updateModeUI(mode);
+            
+            // 如果切换到 Free 模式，需要根据当前 provider 初始化模型列表
+            if (mode === 'free') {
+                const provider = document.getElementById('api-provider').value || 'siliconflow';
+                const currentModel = document.getElementById('api-model').value;
+                buildModelOptionsForProvider(provider, currentModel || getDefaultModelForProvider(provider));
+            }
         });
     });
+    
+    // 监听 Provider 切换，动态更新模型列表
+    const providerSelect = document.getElementById('api-provider');
+    if (providerSelect) {
+        providerSelect.addEventListener('change', (e) => {
+            const provider = e.target.value;
+            const defaultModel = getDefaultModelForProvider(provider);
+            
+            // 重建模型列表，使用默认模型
+            buildModelOptionsForProvider(provider, defaultModel);
+        });
+    }
     
     /**
      * 将 profile 对象渲染到表单 UI

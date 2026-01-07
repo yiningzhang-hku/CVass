@@ -110,7 +110,7 @@ async function callChatCompletion(config, messages, options = {}) {
         } else if (provider === 'qwen_official' || provider === 'internal_qwen') {
           helpfulMessage += `\n\n提示：通义千问官方支持的模型为 qwen-plus、qwen-turbo 或 qwen-max`;
         } else if (provider === 'kimi_official') {
-          helpfulMessage += `\n\n提示：Kimi 官方支持的模型为 moonshot-v1-8k、moonshot-v1-32k 或 moonshot-v1-128k`;
+          helpfulMessage += `\n\n提示：Kimi 官方支持的模型为 kimi-k2-0905-preview、kimi-k2-turbo-preview、kimi-k2-thinking 或 kimi-k2-thinking-turbo`;
         }
         helpfulMessage += `\n\n请检查：\n1. 您选择的 Provider 是否正确\n2. 模型名称是否与 Provider 匹配\n3. 如果使用免费模式，请到「⚙️ 设置」页面检查模型配置`;
         throw new Error(helpfulMessage);
@@ -162,9 +162,9 @@ async function callChatCompletion(config, messages, options = {}) {
 function getProviderEndpoint(provider) {
   const endpoints = {
     'siliconflow': 'https://api.siliconflow.cn/v1/chat/completions',
-    'deepseek_official': 'https://api.deepseek.com/v1/chat/completions',
+    'deepseek_official': 'https://api.deepseek.com/v1/chat/completions',  // 修复：添加 /chat/completions
     'qwen_official': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
-    'kimi_official': 'https://api.moonshot.cn/v1/chat/completions',
+    'kimi_official': 'https://api.moonshot.ai/v1/chat/completions',  // 修复：添加 /chat/completions
     'internal_qwen': 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation'
   };
 
@@ -288,17 +288,23 @@ function normalizeModelName(provider, model) {
     return model;
   }
 
-  // Kimi 官方: 使用 moonshot-v1-8k, moonshot-v1-32k, moonshot-v1-128k 等格式
+  // Kimi 官方: 使用 kimi-k2-0905-preview, kimi-k2-turbo-preview 等格式
   if (provider === 'kimi_official') {
+    // 拒绝明显不属于 Kimi 的模型格式
     if (model.startsWith('Qwen/') || model.startsWith('deepseek-ai/')) {
-      throw new Error(`Kimi 官方不支持模型 "${model}"，请使用 moonshot-v1-8k、moonshot-v1-32k 或 moonshot-v1-128k`);
+      throw new Error(`Kimi 官方不支持模型 "${model}"，请使用 kimi-k2-0905-preview、kimi-k2-turbo-preview、kimi-k2-thinking 或 kimi-k2-thinking-turbo`);
     }
-    // 如果已经是 moonshot- 格式，直接返回
-    if (model.startsWith('moonshot-')) {
+    // 优先支持新的 kimi-k2-* 格式（官方推荐）
+    if (model.startsWith('kimi-k2-')) {
       return model;
     }
-    // 默认使用 moonshot-v1-8k
-    console.warn(`[LLM Provider] Kimi 官方模型名称 "${model}" 可能不正确，建议使用 moonshot-v1-8k、moonshot-v1-32k 或 moonshot-v1-128k`);
+    // 兼容旧的 moonshot-* 格式（向后兼容）
+    if (model.startsWith('moonshot-')) {
+      console.warn(`[LLM Provider] Kimi 官方模型名称 "${model}" 为旧格式，建议使用新的 kimi-k2-* 格式（如 kimi-k2-turbo-preview）`);
+      return model;
+    }
+    // 其他格式给出提示
+    console.warn(`[LLM Provider] Kimi 官方模型名称 "${model}" 可能不正确，建议使用 kimi-k2-0905-preview、kimi-k2-turbo-preview、kimi-k2-thinking 或 kimi-k2-thinking-turbo`);
     return model;
   }
 
